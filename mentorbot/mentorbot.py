@@ -38,37 +38,22 @@ def get_questions(form):
 
 @bot.event
 async def on_ready():
-    print("Ready")
+    print("Ready to start mentoring")
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
-    await bot.process_commands(message)
-    if message.guild is None:
+    ctx = await bot.get_context(message)
+    if ctx.valid:
+        await bot.process_commands(message)
+    elif message.channel.type == discord.ChannelType.private:
         print("DM channel")
         author = str(message.author.id)
-        if author in responses and len(responses[author]['responses']) < \
-                len(questions[author]['questions']):
+        if author in responses and len(responses[author]['responses']) < len(questions[author]['questions']):
+            print("Message: " + str(message.clean_content))
             handle_response(message, author)
             await mentor_response(message)
-            print(responses)
-
-async def mentor_response(message):
-    author = str(message.author.id)
-    response_length = len(responses[author]['responses'])
-    if response_length < len(questions[author]['questions']):
-        if isinstance(questions[author]['questions'][response_length], str):
-            await message.author.send(
-                questions[author]['questions'][response_length])
-        else:
-            await message.author.send(
-                embed=questions[author]['questions'][response_length])
-    else:
-        await message.author.send(config['end_message'])
-        responses[author]['form'].submit()
-        del responses[author]
-        del questions[author]
 
 def handle_response(response, author):
     responses[author]['responses'].append(response.content)
@@ -77,10 +62,32 @@ def handle_response(response, author):
     responses[author]['form'].fill_field(name, response.content)
     print("Response added to field")
 
+async def mentor_response(message):
+    author = str(message.author.id)
+    response_length = len(responses[author]['responses'])
+
+    # If there are still remaining questions
+    if response_length < len(questions[author]['questions']):
+
+        if isinstance(questions[author]['questions'][response_length], str):
+            await message.author.send(questions[author]['questions'][response_length])
+        else:
+            await message.author.send(embed=questions[author]['questions'][response_length])
+    else:
+        print(responses[author])
+        print(questions[author])
+        await message.author.send(config['end_message'])
+        responses[author]['form'].submit()
+        print("Mentor form submitted for {}".format(message.author.name))
+        del responses[author]
+        del questions[author]
+
 @bot.command()
 async def mentor(ctx):
     form = scaper_obj.extract()
     author = str(ctx.message.author.id)
+
+    # Dictionary for the user responses
     responses[author] = {
         "form": form,
         "responses": []
@@ -89,7 +96,11 @@ async def mentor(ctx):
         "questions": get_questions(form),
         "names": [field.name for field in form.fields if not field.hidden]
     }
+
     print(questions[author])
     await ctx.author.send(config['start_message'])
+                
     await mentor_response(ctx.message)
-    await ctx.message.delete()
+    if ctx.message.channel.type != discord.ChannelType.private:
+        await ctx.message.delete()
+    print("Mentoring session started with {}".format(ctx.message.author.name))
